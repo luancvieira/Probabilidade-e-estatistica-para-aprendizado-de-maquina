@@ -1,0 +1,973 @@
+---
+title: "Trabalho de probabilidade e estatística para aprendizado de máquina"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r importando pacotes}
+required_packages <- c("ggplot2", "gridExtra", "dplyr", "lubridate", "ggtext","grid")
+
+for (package in required_packages) {
+  if (!requireNamespace(package, quietly = TRUE)) {
+    install.packages(package)
+  }
+}
+
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(gridExtra)
+library(ggtext)
+library(grid)
+
+set.seed(1)
+```
+
+## Introdução
+
+```{r leitura-dos-dados}
+dados_chromecast <- read.csv('dados/dataset_chromecast.csv')
+dados_smarttv <- read.csv('dados/dataset_smart-tv.csv') 
+
+dados_chromecast <- dados_chromecast
+dados_smarttv <- dados_smarttv
+```
+
+```{r}
+summary(dados_chromecast)
+```
+
+```{r}
+summary(dados_smarttv)
+```
+
+
+Tabelas de frequência com quantidades de interesse para avaliar log
+
+```{r}
+generate_frequency_table <- function(data, col) {
+  contagem_zero <- sum(data[[col]] == 0)
+  contagem_zero_um <- sum(data[[col]] > 0 & data[[col]] < 1)
+  contagem_um <- sum(data[[col]] == 1)
+  contagem_maior_um <- sum(data[[col]] > 1)
+  
+  frequencies <- c("0" = contagem_zero, "(0,1)" = contagem_zero_um, "1" = contagem_um, "1+" = contagem_maior_um)
+  return(frequencies)
+}
+```
+
+```{r}
+# Gerar tabelas de frequência individuais
+chromecast_freq_table_down <- generate_frequency_table(dados_chromecast, 'bytes_down')
+chromecast_freq_table_up <- generate_frequency_table(dados_chromecast, 'bytes_up')
+
+smarttv_freq_table_down <- generate_frequency_table(dados_smarttv, 'bytes_down')
+smarttv_freq_table_up <- generate_frequency_table(dados_smarttv, 'bytes_up')
+
+# Combinar tabelas
+combined_freq_table <- data.frame(
+  Chromecast_bytes_down = chromecast_freq_table_down,
+  Chromecast_bytes_up = chromecast_freq_table_up,
+  SmartTV_bytes_down = smarttv_freq_table_down,
+  SmartTV_bytes_up = smarttv_freq_table_up
+)
+
+# Visualização (transposta)
+print(t(combined_freq_table))
+```
+
+Reescalonamento dos dados
+
+```{r reescalonamento-dos-dados}
+escala_log10 <- function(df, col) {
+  df[[col]] <- ifelse(df[[col]] >= 1, log10(df[[col]]), 0)
+  return(df)
+}
+
+dados_chromecast <- escala_log10(dados_chromecast, 'bytes_down')
+dados_chromecast <- escala_log10(dados_chromecast, 'bytes_up')
+
+dados_smarttv <- escala_log10(dados_smarttv, 'bytes_down')
+dados_smarttv <- escala_log10(dados_smarttv, 'bytes_up')
+```
+
+
+## Análise exploratória dos dados
+
+### Estatísticas descritivas (amostral)
+
+```{r}
+summary(dados_chromecast)
+```
+
+```{r}
+summary(dados_smarttv)
+```
+
+```{r}
+calcular_estatisticas <- function(data, col) {
+  mean_value <- round(mean(data[[col]]),2)
+  var_value <- round(sum(1 / (length(data[[col]]) - 1) * 
+                           (data[[col]] - mean(data[[col]]))**2),2)
+  sd_value <- round(sqrt(sum(1 / (length(data[[col]]) - 1) * 
+                            (data[[col]] - mean(data[[col]]))**2)),2)
+
+  
+  return(c(Média = mean_value,
+           'Desvio Padrão' = sd_value,
+           Variância = var_value))
+}
+
+# Agrupar em uma tabela única
+stats_table <- data.frame(
+  Chromecast_bytes_down = calcular_estatisticas(dados_chromecast, 'bytes_down'),
+  Chromecast_bytes_up = calcular_estatisticas(dados_chromecast, 'bytes_up'),
+  SmartTV_bytes_down = calcular_estatisticas(dados_smarttv, 'bytes_down'),
+  SmartTV_bytes_up = calcular_estatisticas(dados_smarttv, 'bytes_up')
+)
+
+# Visualizar tabela
+print(stats_table)
+```
+
+### Histogramas
+
+Sturge
+
+```{r regra-de-Sturge}
+n_bins <- function(data) {
+  n <- length(data)
+  bins <- ceiling(1 + 3.222 * log10(n))
+  return(bins)
+}
+```
+
+
+```{r funcao-histogramas-com-Sturge}
+gerar_histograma <- function(data, col, x_label, y_label = "", title) {
+  ggplot(data, aes(x = .data[[col]])) +
+    geom_histogram(aes(y = after_stat(count/sum(count))), 
+                   bins = n_bins(data[[col]]), 
+                   fill = "skyblue", color = "black", alpha = 0.7) +
+    labs(x = x_label, y = y_label, title = title) +
+    coord_cartesian(xlim = c(0, 9), ylim = c(0, 0.3)) +
+    scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+    scale_x_continuous(breaks = seq(0, 9, 1))
+}
+```
+
+```{r}
+# Criar histogramas
+hist_chromecast_download <- gerar_histograma(dados_chromecast, 'bytes_down', 
+                      "", title = "Chromecast - Taxa de Download")
+
+hist_chromecast_upload <- gerar_histograma(dados_chromecast, 'bytes_up', 
+                      "", title = "Chromecast - Taxa de Upload")
+
+hist_smarttv_download <- gerar_histograma(dados_smarttv, 'bytes_down', 
+                      "", title = "Smart TV - Taxa de Download")
+
+hist_smarttv_upload <- gerar_histograma(dados_smarttv, 'bytes_up', 
+                      "", title = "Smart TV - Taxa de Upload")
+
+grid.arrange(hist_chromecast_download, hist_chromecast_upload,
+             hist_smarttv_download, hist_smarttv_upload, ncol = 2)
+```
+
+### Boxplots
+
+```{r}
+# Gerar boxplots
+plot <- ggplot() +
+  geom_boxplot(data = dados_chromecast, aes(x = "Chromecast\nenvio",
+      y = bytes_up, fill = "Chromecast - envio"), position = "dodge") +
+  geom_boxplot(data = dados_chromecast, aes(x = "Chromecast\nrecebimento",
+      y = bytes_down, fill = "Chromecast - recebimento"), position = "dodge") +
+  geom_boxplot(data = dados_smarttv, aes(x = "Smart TV\nenvio", 
+      y = bytes_up, fill = "Smart TV - envio"), position = "dodge") +
+  geom_boxplot(data = dados_smarttv, aes(x = "Smart TV\nrecebimento",
+      y = bytes_down, fill = "Smart TV - recebimento"), position = "dodge") +
+  labs(x = "", y = "taxa (bps)", fill = "",
+  title = "Boxplots para taxas de recebimento e envio dos dois tipos de aparelho") +
+  scale_fill_manual(values = c("Chromecast - envio" = "darkblue", 
+                                "Chromecast - recebimento" = "lightblue",
+                                "Smart TV - envio" = "darkgreen",
+                                "Smart TV - recebimento" = "lightgreen")) +
+  guides(fill = FALSE)
+
+# Visualização
+print(plot)
+```
+
+```{r}
+gerar_ecdf <- function(data, col, x_label = "", y_label = "", title) {
+  ggplot(data, aes(x = .data[[col]])) +
+    stat_ecdf(geom = "step", color = "skyblue") +
+    labs(x = x_label, y = y_label, title = title) +
+    coord_cartesian(xlim = c(0, 9), ylim = c(0, 1)) +
+    scale_x_continuous(breaks = seq(0, 9, 1))
+}
+
+# adicionar ecdf
+ecdf_chromecast_download <- gerar_ecdf(dados_chromecast, 'bytes_down', 
+                              title = "Chromecast - Taxa de Download")
+
+ecdf_chromecast_upload <- gerar_ecdf(dados_chromecast, 'bytes_up', 
+                              title = "Chromecast - Taxa de Upload")
+
+ecdf_smarttv_download <- gerar_ecdf(dados_smarttv, 'bytes_down', 
+                              title = "Smart TV - Taxa de Download")
+
+ecdf_smarttv_upload <- gerar_ecdf(dados_smarttv, 'bytes_up', 
+                              title = "Smart TV - Taxa de Upload")
+
+# Gerar grid
+grid.arrange(ecdf_chromecast_download, ecdf_chromecast_upload,
+             ecdf_smarttv_download, ecdf_smarttv_upload, ncol = 2)
+```
+
+```{r}
+coluna_hora <- function(df) {
+  df$date_hour <- as.POSIXct(df$date_hour)
+  df$hora <- hour(df$date_hour)
+  return(df)
+}
+```
+
+```{r}
+dados_chromecast <- coluna_hora(dados_chromecast)
+dados_smarttv <- coluna_hora(dados_smarttv)
+```
+
+
+```{r}
+estatisticas_hora <- function(df, col, label) {
+  
+  # Estatísticas por hora
+  grouped_data <- df %>%
+    group_by(hora)
+
+  result_stats <- grouped_data %>%
+    summarise(
+      mean_value = mean(!!sym(col)),
+      var_value = var(!!sym(col)),
+      std_value = sd(!!sym(col))
+    )
+  
+  # Plot
+  plot <- ggplot(result_stats, aes(x = hora)) +
+    geom_line(aes(y = mean_value, color = "Média")) +
+    geom_line(aes(y = var_value, color = "Variância")) +
+    geom_line(aes(y = std_value, color = "Desvio Padrão")) +
+    labs(title = paste0(label, ifelse(col == 'bytes_up', " - taxa de envio",
+                                      " - taxa de recebimento")),
+         x = "Hora", y = "Valores") +
+    theme(legend.position = "top") +
+    scale_color_manual(
+      values = c("Média" = "blue", "Variância" = "red",
+                 "Desvio Padrão" = "green"),
+      name = ""
+    ) +
+    scale_x_continuous(breaks = seq(0, 23, 1))
+  
+  # Visualização
+  print(plot)
+}
+```
+
+
+```{r}
+estatisticas_hora(dados_chromecast, 'bytes_up', label = "Chromecast")
+```
+
+```{r}
+estatisticas_hora(dados_chromecast, 'bytes_down', label = "Chromecast")
+```
+
+```{r}
+estatisticas_hora(dados_smarttv, 'bytes_up', label = "Smart TV")
+```
+
+```{r}
+estatisticas_hora(dados_smarttv, 'bytes_down', label = "Smart TV")
+```
+
+```{r}
+ggplot(dados_chromecast, aes(x = factor(hora), y = bytes_down, fill = hora)) +
+  geom_boxplot() +
+  scale_fill_gradient(low = "blue", high = "red", guide = "colorbar") +
+  labs(title = "Boxplot por hora - Chromecast - Taxa de recebimento",
+       x = "Hora",
+       y = "taxa (bps)") + guides(fill = FALSE)
+```
+
+
+```{r}
+ggplot(dados_chromecast, aes(x = factor(hora), y = bytes_up, fill = hora)) +
+  geom_boxplot() +
+  scale_fill_gradient(low = "blue", high = "red", guide = "colorbar") +
+  labs(title = "Boxplot por hora - Chromecast - Taxa de envio",
+       x = "Hora",
+       y = "taxa (bps)") + guides(fill = FALSE)
+```
+
+
+```{r}
+ggplot(dados_smarttv, aes(x = factor(hora), y = bytes_down, fill = hora)) +
+  geom_boxplot() +
+  scale_fill_gradient(low = "blue", high = "red", guide = "colorbar") +
+  labs(title = "Boxplot por hora - Smart TV - Taxa de recebimento",
+       x = "Hora",
+       y = "taxa (bps)") + guides(fill = FALSE)
+```
+
+```{r}
+ggplot(dados_smarttv, aes(x = factor(hora), y = bytes_up, fill = hora)) +
+  geom_boxplot() +
+  scale_fill_gradient(low = "blue", high = "red", guide = "colorbar") +
+  labs(title = "Boxplot por hora - Smart TV - Taxa de envio",
+       x = "Hora",
+       y = "taxa (bps)") + guides(fill = FALSE)
+```
+
+###  Horários com maior tráfego
+
+#### Passo 1
+
+Smart TV - upload
+
+```{r}
+smarttv_hour_upload <- dados_smarttv %>%
+  group_by(hora) %>%
+  summarise(mean_bytes_up = mean(bytes_up)) %>%
+  filter(mean_bytes_up == max(mean_bytes_up)) %>%
+  pull(hora)
+smarttv_hour_upload
+```
+
+Smart TV - download
+
+```{r}
+smarttv_hour_download <- dados_smarttv %>%
+  group_by(hora) %>%
+  summarise(mean_bytes_down = mean(bytes_down)) %>%
+  filter(mean_bytes_down == max(mean_bytes_down)) %>%
+  pull(hora)
+
+smarttv_hour_download
+```
+
+Chromecast - upload
+
+```{r}
+chromecast_hour_upload <- dados_chromecast %>%
+  group_by(hora) %>%
+  summarise(mean_bytes_up = mean(bytes_up)) %>%
+  filter(mean_bytes_up == max(mean_bytes_up)) %>%
+  pull(hora)
+
+chromecast_hour_upload
+```
+
+Chromecast - download
+
+```{r}
+chromecast_hour_download <- dados_chromecast %>%
+  group_by(hora) %>%
+  summarise(mean_bytes_down = mean(bytes_down)) %>%
+  filter(mean_bytes_down == max(mean_bytes_down)) %>%
+  pull(hora)
+
+chromecast_hour_download
+```
+
+```{r}
+dataset1 <- dados_smarttv[dados_smarttv$hora == smarttv_hour_download, ]
+
+dataset2 <- dados_smarttv[dados_smarttv$hora == smarttv_hour_download, ]
+
+dataset3 <- dados_chromecast[dados_chromecast$hora == chromecast_hour_download,]
+
+dataset4 <- dados_chromecast[dados_chromecast$hora == chromecast_hour_download,]
+```
+
+#### Passo 2
+
+```{r}
+# Criar histogramas
+
+hist_smarttv_upload <- gerar_histograma(dataset1, 'bytes_up', 
+                      "", title = "Smart TV - Taxa de Upload")
+
+hist_smarttv_download <- gerar_histograma(dataset2, 'bytes_down', 
+                      "", title = "Smart TV - Taxa de Download")
+
+hist_chromecast_upload <- gerar_histograma(dataset3, 'bytes_up', 
+                      "", title = "Chromecast - Taxa de Upload")
+
+hist_chromecast_download <- gerar_histograma(dataset4, 'bytes_down', 
+                      "", title = "Chromecast - Taxa de Download")
+
+grid.arrange(hist_smarttv_upload, hist_smarttv_download, hist_chromecast_upload,
+             hist_chromecast_download, ncol = 2)
+```
+
+#### Passo 3
+
+Descrito no relatório
+
+#### Passo 4
+
+Parâmetros
+```{r}
+param_densidades <- function(data, col) {
+  # MLE para distribuição normal
+  mu_hat <- mean(data[[col]])
+  n <- length(data[[col]])
+  sd_hat <- ((n-1)/n) * sd(data[[col]])
+  
+  # MLE para distribuição gama
+  valores_sem_zero <- ifelse(data[[col]] == 0, 0.1, data[[col]])
+  
+  alpha_hat <- n / sum(log(valores_sem_zero))
+  beta_hat <- alpha_hat / mean(valores_sem_zero)
+  return(list(mu_hat,sd_hat,alpha_hat,beta_hat))
+}
+```
+
+
+```{r}
+gerar_histograma_com_densidades <- function(data, col, title) {
+  
+  # MLE para distribuição normal
+  mu_hat <- mean(data[[col]])
+  n <- length(data[[col]])
+  sd_hat <- ((n-1)/n) * sd(data[[col]])
+  
+  # MLE para distribuição gama
+  valores_sem_zero <- ifelse(data[[col]] == 0, 0.1, data[[col]])
+  
+  alpha_hat <- n / sum(log(valores_sem_zero))
+  beta_hat <- alpha_hat / mean(valores_sem_zero)
+  
+  # Plot
+  ggplot(data, aes(x = .data[[col]])) +
+    geom_histogram(aes(y = after_stat(count/sum(count))), 
+                   bins = n_bins(data[[col]]), 
+                   fill = "skyblue") +
+    stat_function(aes(color = "Gaussiana"), 
+                  fun = dnorm,
+                  args = list(mean = mu_hat, sd = sd_hat), size = 1) + 
+    stat_function(aes(color = "Gama"), 
+                  fun = dgamma,
+                  args = list(shape = alpha_hat, rate = beta_hat), size = 1) +
+    coord_cartesian(xlim = c(0, 9), ylim = c(0, 0.5)) +
+    scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+    scale_x_continuous(breaks = seq(0, 9, 1)) +
+    theme(legend.position = "top") +
+    labs(title = title,
+         x = ifelse(col=='bytes_up', 'taxa de envio', 'taxa de recebimento'),
+         y = "") +
+    scale_color_manual(name = "Densidade (MLE)",
+                       values = c("Gaussiana" = "red", "Gama" = "blue"))
+  
+}
+
+```
+
+
+```{r}
+param_densidade_smarttv_upload <- param_densidades(dataset1,
+                      'bytes_up')
+
+param_densidade_smarttv_download <- param_densidades(dataset2,
+                      'bytes_down')
+
+param_densidade_chromecast_upload <- param_densidades(dataset3,
+                      'bytes_up')
+
+param_densidade_chromecast_download <- param_densidades(dataset4,
+                      'bytes_down')
+
+parameter_matrix <- matrix(
+  c(
+    param_densidade_smarttv_upload,
+    param_densidade_smarttv_download,
+    param_densidade_chromecast_upload,
+    param_densidade_chromecast_download
+  ),
+  nrow = 4, byrow = TRUE,
+  dimnames = list(
+    c("Smart TV - Upload", "Smart TV - Download", "Chromecast - Upload", "Chromecast - Download"),
+    c("mu_hat", "sigma_hat", "alpha_hat", "beta_hat")
+  )
+)
+
+# Display the matrix as a table
+print(parameter_matrix)
+
+```
+
+
+
+
+```{r}
+densidade_smarttv_upload <- gerar_histograma_com_densidades(dataset1,
+                      'bytes_up', title = "Smart TV - Taxa de Upload")
+
+densidade_smarttv_download <- gerar_histograma_com_densidades(dataset2,
+                      'bytes_down', title = "Smart TV - Taxa de Download")
+
+densidade_chromecast_upload <- gerar_histograma_com_densidades(dataset3,
+                      'bytes_up', title = "Chromecast - Taxa de Upload")
+
+densidade_chromecast_download <- gerar_histograma_com_densidades(dataset4,
+                      'bytes_down', title = "Chromecast - Taxa de Download")
+
+grid.arrange(densidade_smarttv_upload, densidade_smarttv_download,
+        densidade_chromecast_upload , densidade_chromecast_download, ncol = 2)
+```
+
+
+```{r}
+gerar_histograma_com_densidades2 <- function(data, col, title) {
+  
+  n <- length(data[[col]])
+  # MLE para distribuição gama
+  data[[col]] = data[[col]] - 1.8
+  valores_sem_zero <- ifelse(data[[col]] <= 0, 0.1, data[[col]])
+  
+  alpha_hat <- n / sum(log(valores_sem_zero))
+  beta_hat <- alpha_hat / mean(valores_sem_zero)
+  
+  # Plot
+  ggplot(data, aes(x = .data[[col]])) +
+    geom_histogram(aes(y = after_stat(count/sum(count))), 
+                   bins = n_bins(data[[col]]), 
+                   fill = "skyblue") +
+    stat_function(aes(color = "Gama"), 
+                  fun = dgamma,
+                  args = list(shape = alpha_hat, rate = beta_hat), size = 1) +
+    coord_cartesian(xlim = c(0, 7), ylim = c(0, 0.5)) +
+    scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+    scale_x_continuous(breaks = seq(0, 7, 1)) +
+    theme(legend.position = "top") +
+    labs(title = title,
+         x = ifelse(col=='bytes_up', 'taxa de envio', 'taxa de recebimento'),
+         y = "") +
+    scale_color_manual(name = "Densidade (MLE)",
+                       values = c("Gama" = "blue"))
+}
+
+```
+
+
+```{r}
+densidade_chromecast_upload <- gerar_histograma_com_densidades2(dataset3,
+                      'bytes_up', title = "Chromecast - Taxa de Upload")
+
+densidade_chromecast_download <- gerar_histograma_com_densidades2(dataset4,
+                      'bytes_down', title = "Chromecast - Taxa de Download")
+
+grid.arrange(densidade_chromecast_upload , densidade_chromecast_download, ncol = 2)
+```
+
+#### Passo 5
+
+
+```{r}
+prob_plots <- function(data, col, title) {
+  probability_plots <- list()
+  
+  # MLE para distribuição normal
+  mu_hat <- mean(data[[col]])
+  n <- length(data[[col]])
+  sd_hat <- ((n-1)/n) * sd(data[[col]])
+  
+  # MLE para distribuição gama
+  valores_sem_zero <- ifelse(data[[col]] == 0, 0.1, data[[col]])
+  
+  alpha_hat <- n / sum(log(valores_sem_zero))
+  beta_hat <- alpha_hat / mean(valores_sem_zero)
+  
+  for (distribution in c("Gaussian", "Gamma")) {
+    # Probability plot
+    prob_plot <- ggplot(data, aes(sample = .data[[col]])) +
+      stat_qq(distribution = ifelse(distribution == "Gaussian", qnorm, qgamma),
+              dparams = ifelse(distribution == "Gaussian", list(mean = mu_hat, sd = sd_hat),
+                               list(shape = alpha_hat, rate = beta_hat)),
+              col = "skyblue", size = 1.5, alpha = 0.7) +
+      geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red", size = 1.5) +
+      labs(title = ifelse(distribution == "Gaussian", "Gaussiana", "Gama"), 
+           x = "Quantil teórico", y = "Quantil amostral") +
+      theme_minimal() +
+      theme(plot.title = element_text(hjust = 0.5, size = 14, face = "bold"),
+            axis.title = element_text(size = 12),
+            axis.text = element_text(size = 10),
+            legend.position = "top") +
+      coord_cartesian(xlim = c(0, 9), ylim = c(0, 9)) +
+      scale_x_continuous(breaks = seq(0, 9, by = 1)) +
+      scale_y_continuous(breaks = seq(0, 9, by = 1))
+    
+    probability_plots <- append(
+      probability_plots,
+      list(prob_plot),
+      after = length(probability_plots)
+    )
+  }
+
+  # Plotar grid with legend
+  grid.arrange(grobs = probability_plots, ncol = 2, top = textGrob(title, gp = gpar(fontsize = 20, font = 3)))
+}
+
+```
+
+```{r}
+prob_plots(dataset1, 'bytes_up', 'Smart TV - Taxa de envio')
+```
+
+```{r}
+prob_plots(dataset2, 'bytes_down', 'Smart TV - Taxa de recebimento')
+```
+
+```{r}
+prob_plots(dataset3, 'bytes_up', 'Chromecast - Taxa de envio')
+```
+
+
+```{r}
+prob_plots(dataset4, 'bytes_down', 'Chromecast - Taxa de recebimento')
+```
+
+
+
+#### Passo 6
+
+```{r}
+calcula_quantis_interpolados <- function(sample1, sample2) {
+
+  if (length(sample1) <= length(sample2)) {
+    amostra_menor <- sample1
+    amostra_maior <- sample2
+    xlab <- "Smart TV"
+    ylab <- "Chromecast"
+  } else {
+    amostra_menor <- sample2
+    amostra_maior <- sample1
+    ylab <- "Smart TV"
+    xlab <- "Chromecast"
+  }
+
+  quantis_amostra_menor <- quantile(amostra_menor, probs = seq(0, 1, by = 0.01))
+
+  quantis_amostra_maior <- quantile(amostra_maior, probs = seq(0, 1, by = 0.01))
+  interpolated_quantis_amostra_maior <- approx(quantis_amostra_maior, quantis_amostra_menor,
+                                          n = length(quantis_amostra_maior))$y
+  
+  return(list(amostra_menor_quantiles = quantis_amostra_menor, 
+              amostra_maior_quantiles = interpolated_quantis_amostra_maior,
+              xlab = xlab, ylab = ylab))
+}
+
+```
+
+
+```{r}
+quantiles <- calcula_quantis_interpolados(dataset1$bytes_up,
+                                          dataset3$bytes_up)
+
+qq_data <- data.frame(x = quantiles$amostra_menor_quantiles,
+                      y = quantiles$amostra_maior_quantiles)
+
+ggplot(qq_data, aes(x = x, y = y)) +
+  geom_point(color = "blue", shape = 19) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  labs(title = "QQ Plot - Taxa de envio",
+       x = quantiles$xlab,
+       y = quantiles$ylab) +
+  theme_minimal()
+```
+
+
+```{r}
+quantiles <- calcula_quantis_interpolados(dataset2$bytes_down,
+                                          dataset4$bytes_down)
+
+qq_data <- data.frame(x = quantiles$amostra_menor_quantiles,
+                      y = quantiles$amostra_maior_quantiles)
+
+ggplot(qq_data, aes(x = x, y = y)) +
+  geom_point(color = "blue", shape = 19) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +
+  labs(title = "QQ Plot - Taxa de recebimento",
+       x = quantiles$xlab,
+       y = quantiles$ylab) +
+  theme_minimal()
+```
+
+### Correlação
+
+#### Smart TV
+
+```{r}
+# Correlação de Pearson
+smarttv_cor_pearson <- cor(dataset2$bytes_up, dataset2$bytes_down)
+
+# Gráfico de dispersão
+dispersao_smarttv <- ggplot(data = dataset2,
+                            aes(x = bytes_up, y = bytes_down)) +
+  geom_point(alpha = 0.5, color = "skyblue") + 
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "red") +
+  labs(title = paste("Gráfico de dispersão Smart TV - Taxa de Envio e Taxa de Recebimento\n",
+                     "Coeficiente de Correlação de Pearson:",
+                     smarttv_cor_pearson),
+       x = "Taxa de Envio",
+       y = "Taxa de Recebimento") +
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5), 
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        legend.position = "none") + 
+      coord_cartesian(xlim = c(0, 9), ylim = c(0, 9)) +
+      scale_x_continuous(breaks = seq(0, 9, 1)) +
+      scale_y_continuous(breaks = seq(0, 9, 1))
+dispersao_smarttv
+```
+
+```{r}
+# Calcular os resíduos da regressão linear
+residuos <- resid(lm(bytes_down ~ bytes_up, data = dataset2))
+
+# Criar o gráfico de dispersão dos resíduos
+grafico_residuos <- ggplot(data = dataset2, aes(x = bytes_up, y = residuos)) +
+  geom_point(alpha = 0.5, color = "skyblue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Gráfico de Resíduos da Regressão Linear - Smart TV",
+       x = "Taxa de Envio",
+       y = "Resíduos") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        legend.position = "none") +
+  coord_cartesian(xlim = c(0, 9)) +
+  scale_x_continuous(breaks = seq(0, 9, 1))
+
+grafico_residuos
+```
+
+
+
+```{r}
+# Correlação de Pearson
+chromecast_cor_pearson <- cor(dataset3$bytes_up, dataset4$bytes_down)
+
+# Gráfico de dispersão
+dispersao_chromecast <- ggplot(data = dataset4,
+                               aes(x = bytes_up, y = bytes_down)) +
+  geom_point(alpha = 0.5, color = "skyblue") +
+  geom_smooth(method = "lm", formula = y ~ x, se = FALSE, color = "red") +
+  labs(title = paste("Gráfico de dispersão Smart TV - Taxa de Envio e Taxa de Recebimento\n",
+                     "Coeficiente de Correlação de Pearson:",
+                     chromecast_cor_pearson),
+       x = "Taxa de Envio",
+       y = "Taxa de Recebimento") +
+  theme_minimal() + 
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        legend.position = "none") +
+        coord_cartesian(xlim = c(0, 9), ylim = c(0, 9)) +
+        scale_x_continuous(breaks = seq(0, 9, 1)) +
+        scale_y_continuous(breaks = seq(0, 9, 1))
+dispersao_chromecast
+```
+
+```{r}
+# Calcular os resíduos da regressão linear
+residuos <- resid(lm(bytes_down ~ bytes_up, data = dataset4))
+
+# Criar o gráfico de dispersão dos resíduos
+grafico_residuos <- ggplot(data = dataset4, aes(x = bytes_up, y = residuos)) +
+  geom_point(alpha = 0.5, color = "skyblue") +
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  labs(title = "Gráfico de Resíduos da Regressão Linear - Chromecast",
+       x = "Taxa de Envio",
+       y = "Resíduos") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),
+        axis.title = element_text(size = 12),
+        axis.text = element_text(size = 10),
+        legend.position = "none") +
+  coord_cartesian(xlim = c(0, 9)) +
+  scale_x_continuous(breaks = seq(0, 9, 1))
+
+grafico_residuos
+```
+
+
+### Teste G
+
+Taxa de envio
+
+Definindo valores de quebra de intervalo
+
+```{r}
+get_breaks <- function(data, col) {
+  breaks <- cut_interval(data[[col]], n = n_bins(data[[col]]))
+  bin_intervals <- levels(breaks)
+  valores_corte <- sapply(bin_intervals, function(s) {
+  as.numeric(gsub("\\[|\\]|\\(|\\)", "", strsplit(s, ",")[[1]]))
+})
+  valores_corte <- unique(c(valores_corte))
+  return(list(bin_intervals = bin_intervals, valores_corte = valores_corte))
+}
+```
+
+```{r}
+dataset1_breaks = get_breaks(dataset1,'bytes_up')$valores_corte
+```
+
+```{r}
+dataset1_breaks_colnames = get_breaks(dataset1,'bytes_up')$bin_intervals
+```
+
+```{r}
+dataset1_breaks
+dataset1_breaks_colnames
+```
+
+```{r}
+tabela_frequencia_data1 <- cut(dataset1$bytes_up, breaks = c(dataset1_breaks),
+                               include.lowest = TRUE)
+tabela_frequencia_data3 <- cut(dataset3$bytes_up, breaks = c(dataset1_breaks),
+                               include.lowest = TRUE)
+```
+
+```{r}
+tab1 <- table(tabela_frequencia_data1)
+```
+
+```{r}
+tab3 <- table(tabela_frequencia_data3)
+```
+
+
+```{r}
+dado_observado1 <- as.numeric(table(tabela_frequencia_data1))
+dado_observado1
+```
+
+
+```{r}
+dado_observado3 <- as.numeric(table(tabela_frequencia_data3))
+dado_observado3
+```
+
+```{r}
+tabela_contingencia <- t(matrix(c(tab1,tab3), ncol = 2))
+tabela_contingencia[tabela_contingencia == 0] <- 0.1
+colnames(tabela_contingencia) <- dataset1_breaks_colnames
+rownames(tabela_contingencia) <- c("Smart TV", "Chromecast")
+tabela_contingencia
+```
+
+```{r}
+row_sums <- rowSums(tabela_contingencia)
+col_sums <- colSums(tabela_contingencia)
+
+tabela_esperada <- outer(row_sums, col_sums) / sum(tabela_contingencia)
+
+tabela_esperada
+```
+
+```{r}
+# estatística de teste
+G <- 2 * sum(tabela_contingencia * log(tabela_contingencia / tabela_esperada))
+
+# graus de liberdade
+df <- (nrow(tabela_contingencia) - 1) * (ncol(tabela_contingencia) - 1)
+
+# p-valor
+p_valor <- 1 - pchisq(G, df)
+
+cat("estatística de teste G:", G,'\n')
+cat("graus de liberdade:", df,'\n')
+cat("p-valor:", p_valor)
+```
+
+```{r}
+dataset2_breaks = get_breaks(dataset2,'bytes_down')$valores_corte
+```
+
+```{r}
+dataset2_breaks_colnames = get_breaks(dataset2,'bytes_down')$bin_intervals
+```
+
+```{r}
+dataset2_breaks
+dataset2_breaks_colnames
+```
+
+```{r}
+tabela_frequencia_data2 <- cut(dataset2$bytes_down, breaks = c(dataset2_breaks),
+                               include.lowest = TRUE)
+tabela_frequencia_data4 <- cut(dataset4$bytes_down, breaks = c(dataset2_breaks),
+                               include.lowest = TRUE)
+```
+
+```{r}
+tab2 <- table(tabela_frequencia_data2)
+```
+
+```{r}
+tab4 <- table(tabela_frequencia_data4)
+```
+
+
+```{r}
+dado_observado2 <- as.numeric(table(tabela_frequencia_data2))
+dado_observado2
+```
+
+
+```{r}
+dado_observado4 <- as.numeric(table(tabela_frequencia_data4))
+dado_observado4
+```
+
+```{r}
+tabela_contingencia <- t(matrix(c(tab2,tab3), ncol = 2))
+tabela_contingencia[tabela_contingencia == 0] <- 0.1
+colnames(tabela_contingencia) <- dataset2_breaks_colnames
+rownames(tabela_contingencia) <- c("Smart TV", "Chromecast")
+tabela_contingencia
+```
+
+```{r}
+row_sums <- rowSums(tabela_contingencia)
+col_sums <- colSums(tabela_contingencia)
+
+tabela_esperada <- outer(row_sums, col_sums) / sum(tabela_contingencia)
+
+tabela_esperada
+```
+
+```{r}
+# estatística de teste
+G <- 2 * sum(tabela_contingencia * log(tabela_contingencia / tabela_esperada))
+
+# graus de liberdade
+df <- (nrow(tabela_contingencia) - 1) * (ncol(tabela_contingencia) - 1)
+
+# p-valor
+p_valor <- 1 - pchisq(G, df)
+
+cat("estatística de teste G:", G,'\n')
+cat("graus de liberdade:", df,'\n')
+cat("p-valor:", p_valor)
+```
+
+
+
